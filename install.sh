@@ -139,6 +139,8 @@ cd /usr/src/nginx
 --user=www-data --group=www-data \
 --prefix=/usr/local/nginx \
 --sbin-path=/usr/sbin/nginx \
+--with-stream \
+--with-stream=dynamic \
 --with-compat --with-file-aio --with-threads \
 --with-http_v2_module --with-http_v2_hpack_enc \
 --with-http_spdy_module --with-http_realip_module \
