@@ -1,134 +1,34 @@
 #!/bin/bash
 
-# 选择安装 WAF
-cat << EOF
-
-ngx_lua_waf is a web application firewall based on lua-nginx-module
-
-EOF
-
-read -p "install waf ? (Y/n): " input
-case $input in
-  n) 
-waf=0 
-waf_mod_1=''
-waf_mod_2='' 
-;;
-*) 
-waf=1 
-waf_mod_1='--add-module=../lua-nginx-module'
-waf_mod_2='--add-module=../ngx_devel_kit' 
-;;
-esac 
-
 # 安装依赖
 if [ -e "/usr/bin/yum" ]; then
   yum update -y
-  yum install git gcc make build-essential logrotate cron -y
+  yum install git gawk vim curl wget ntpdate psmisc python-dev python-pip  libxml2 libxml2-devel libxslt-devel gd-devel gperftools libuuid-devel libblkid-devel libudev-devel fuse-devel libedit-devel libatomic_ops-devel gcc-c++ openssl openssl-devel -y
 fi
 if [ -e "/usr/bin/apt-get" ]; then
   apt-get update -y
-  apt-get install git gcc make build-essential logrotate cron -y
+  apt-get install git gawk vim curl wget ntpdate psmisc python-dev python-pip libxslt1-dev libxml2-dev libgd-dev google-perftools uuid-dev libblkid-dev libudev-dev libfuse-dev libedit-dev libatomic-ops-dev build-essential libssl-dev openssl -y
 fi
 
+# 时间
+cp /usr/share/zoneinfo/Asia/Shanghai /etc/localtime && echo asia/shanghai > /etc/timezone && ntpdate 0.cn.pool.ntp.org && iptables -P INPUT ACCEPT && iptables -P OUTPUT ACCEPT
+
+pip install logger requests
 # 准备
 rm -rf /usr/src/
 mkdir -p /usr/src/
 mkdir -p /var/log/nginx/
 useradd -s /sbin/nologin -M www-data
-
-# 下载 openssl
-# 开启 https
-cd /usr/src
-wget https://github.com/openssl/openssl/archive/OpenSSL_1_1_1.tar.gz 
-tar xzvf OpenSSL_1_1_1.tar.gz
-mv openssl-OpenSSL_1_1_1 openssl
+iptables -P INPUT ACCEPT   
+iptables -P OUTPUT ACCEPT  
 
 # 下载 nginx
 cd /usr/src/
-nginx_v='1.17.3'
+nginx_v='1.16.1'
 wget https://nginx.org/download/nginx-${nginx_v}.tar.gz
 tar zxvf ./nginx-${nginx_v}.tar.gz 
 mv nginx-${nginx_v} nginx
 
-# 下载 zlib
-# 开启 gzip 压缩
-cd /usr/src/
-git clone https://github.com/cloudflare/zlib.git zlib
-cd zlib
-make -f Makefile.in distclean
-
-# 下载 ngx_brotli
-# 开启 brotli 压缩
-cd /usr/src/
-git clone --recursive https://github.com/google/ngx_brotli.git
-
-# 下载 pcre
-# 用于正则
-cd /usr/src/
-wget https://ftp.pcre.org/pub/pcre/pcre-8.43.tar.gz
-tar zxf ./pcre-8.43.tar.gz
-
-# 下载 openssl-patch
-# 给 openssl 打补丁，用于开启更多 https 支持
-cd /usr/src/
-git clone https://github.com/hakasenyang/openssl-patch.git
-cd /usr/src/openssl 
-patch -p1 < ../openssl-patch/openssl-equal-1.1.1a_ciphers.patch
-
-cd /usr/src/
-git clone https://github.com/kn007/patch.git nginx-patch
-cd /usr/src/nginx
-patch -p1 < ../nginx-patch/nginx.patch
-
-# 下载安装 jemalloc
-# 更好的内存管理
-cd /usr/src/
-wget https://github.com/jemalloc/jemalloc/releases/download/5.2.1/jemalloc-5.2.1.tar.bz2
-tar xjvf jemalloc-5.2.1.tar.bz2
-cd jemalloc-5.2.1
-./configure
-make && make install
-echo '/usr/local/lib' >> /etc/ld.so.conf.d/local.conf
-ldconfig
-
-if [ $waf -eq 1 ]; then
-
-# 下载 ngx_lua_waf 防火墙的各种依赖及模块
-cd /usr/src/
-luajit_v='2.1-20190626'
-wget https://github.com/openresty/luajit2/archive/v${luajit_v}.tar.gz
-tar xzvf v${luajit_v}.tar.gz
-mv luajit2-${luajit_v} luajit
-
-wget https://github.com/openresty/lua-cjson/archive/2.1.0.7.tar.gz
-tar xzvf 2.1.0.7.tar.gz
-mv lua-cjson-2.1.0.7 lua-cjson
-
-wget https://github.com/simplresty/ngx_devel_kit/archive/v0.3.1rc1.tar.gz
-tar xzvf v0.3.1rc1.tar.gz
-mv ngx_devel_kit-0.3.1rc1 ngx_devel_kit
-
-wget https://github.com/openresty/lua-nginx-module/archive/v0.10.15.tar.gz
-tar xzvf v0.10.15.tar.gz  
-mv lua-nginx-module-0.10.15 lua-nginx-module
-
-# 编译安装 luajit
-cd luajit
-make -j2 && make install
-# echo '/usr/local/lib' >> /etc/ld.so.conf.d/local.conf
-ldconfig
-
-# 编译安装 lua-cjson
-cd /usr/src/lua-cjson
-export LUA_INCLUDE_DIR=/usr/local/include/luajit-2.1 
-make -j2 && make install
-
-# 设置 LUAJIT 环境变量
-export LUAJIT_LIB=/usr/local/lib
-export LUAJIT_INC=/usr/local/include/luajit-2.1
-
-fi
 
 # 关闭 nginx 的 debug 模式
 sed -i 's@CFLAGS="$CFLAGS -g"@#CFLAGS="$CFLAGS -g"@' /usr/src/nginx/auto/cc/gcc
@@ -140,38 +40,32 @@ cd /usr/src/nginx
 --prefix=/usr/local/nginx \
 --sbin-path=/usr/sbin/nginx \
 --with-stream \
---with-stream=dynamic \
 --with-compat --with-file-aio --with-threads \
---with-http_v2_module --with-http_v2_hpack_enc \
---with-http_spdy_module --with-http_realip_module \
---with-http_flv_module --with-http_mp4_module \
---with-openssl=../openssl --with-http_ssl_module \
---with-pcre=../pcre-8.43 --with-pcre-jit \
---with-zlib=../zlib --with-http_gzip_static_module \
---add-module=../ngx_brotli \
---with-ld-opt=-ljemalloc ${waf_mod_1} ${waf_mod_2} 
-# --add-module=../lua-nginx-module \
-# --add-module=../ngx_devel_kit
+--with-select_module \
+--with-poll_module \
+--with-threads
+--conf-path=/usr/local/nginx/conf/nginx.conf \
+--error-log-path=/var/log/nginx/error.log \
+--http-log-path=/var/log/nginx/access.log \
+--pid-path=/var/run/nginx.pid
 
 make -j2 && make install
 
-# 下载配置 ngx_lua_waf
-cd /usr/local/nginx/conf/
-rm -rf /usr/local/nginx/conf/waf
-git clone https://github.com/xzhih/ngx_lua_waf.git waf 
-mkdir -p /usr/local/nginx/logs/waf 
-chown www-data:www-data /usr/local/nginx/logs/waf 
-cat > /usr/local/nginx/conf/waf.conf << EOF
-lua_load_resty_core off;
-lua_shared_dict limit 20m;
-lua_package_path "/usr/local/nginx/conf/waf/?.lua";
-init_by_lua_file "/usr/local/nginx/conf/waf/init.lua";
-access_by_lua_file "/usr/local/nginx/conf/waf/access.lua";
-EOF
+
+cat > "/root/ssr_upstream.conf" << UUU
+    upstream server_upstreams {
+        server 8.8.8.8:443;
+    }
+    server {
+        listen 8080;
+        listen 8080 udp;
+        proxy_pass server_upstreams;
+    }
+UUU
 
 # 创建 nginx 全局配置
 cat > "/usr/local/nginx/conf/nginx.conf" << OOO
-user www-data www-data;
+user root root;
 pid /var/run/nginx.pid;
 worker_processes auto;
 worker_rlimit_nofile 65535;
@@ -181,7 +75,9 @@ events {
   multi_accept on;
   worker_connections 65535;
 }
-
+stream {
+    include /root/ssr_upstream.conf;
+}
 http {
   charset utf-8;
   sendfile on;
@@ -201,23 +97,19 @@ http {
   # Logging
   access_log /var/log/nginx/access.log;
   error_log /var/log/nginx/error.log warn;
+  server {
+        listen       59120 default_server; 
+        root         /root/web; 
+        location / {
+        }
+        error_page 404 /404.html;
+            location = /40x.html {
+        }  
 
-  # Gzip
-  gzip on;
-  gzip_vary on;
-  gzip_proxied any;
-  gzip_comp_level 6;
-  gzip_types text/plain text/css text/xml application/json application/javascript application/xml+rss application/atom+xml image/svg+xml;
-  gzip_disable "MSIE [1-6]\.(?!.*SV1)";
-
-  # Brotli
-  brotli on;
-  brotli_comp_level 6;
-  brotli_static on;
-  brotli_types text/plain text/css text/xml application/json application/javascript application/xml+rss application/atom+xml image/svg+xml;
-
-  include vhost/*.conf;
-  include waf.conf;
+        error_page 500 502 503 504 /50x.html;
+            location = /50x.html {
+        }
+    }
 }
 OOO
 
@@ -260,28 +152,16 @@ cat > /etc/logrotate.d/nginx << EOF
 EOF
 ldconfig
 
-# 配置默认站点
-mkdir -p /wwwroot/
-cp -r /usr/local/nginx/html /wwwroot/default
-mkdir -p /usr/local/nginx/conf/vhost/
-mkdir -p /usr/local/nginx/conf/ssl/
-cat > "/usr/local/nginx/conf/vhost/default.conf" << EEE
-server {
-  listen 80;
-  root /wwwroot/default;
-  location / {
-    index  index.html;
-  }
-}
-EEE
-
-# 配置站点目录权限
-chown -R www-data:www-data /wwwroot/
-find /wwwroot/ -type d -exec chmod 755 {} \;
-find /wwwroot/ -type f -exec chmod 644 {} \;
+# # 配置站点目录权限
+mkdir -p /root/web/d87c
+cp -r /usr/local/nginx/html/*.* /root/web/d87c
+# chown -R www-data:www-data /root/web/
+# find /root/web/ -type d -exec chmod 755 {} \;
+# find /root/web/ -type f -exec chmod 644 {} \;
 
 # 开启 nginx 服务进程
 systemctl unmask nginx.service
 systemctl daemon-reload
 systemctl enable nginx
 systemctl start nginx
+
